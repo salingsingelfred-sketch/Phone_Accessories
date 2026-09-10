@@ -442,7 +442,7 @@ function togglePassword() {
 }
 
 async function handleLogin(e) {
-  e.preventDefault();
+  if (e && e.preventDefault) e.preventDefault();
   const username = $('loginUsername').value.trim();
   const password = $('loginPassword').value;
   const errEl    = $('loginError');
@@ -490,6 +490,22 @@ async function handleLogin(e) {
     if (!bruteIsLocked()) {
       setButtonLoading(btn, false);
     }
+  }
+}
+
+// doLogin() — global function called directly by onclick="doLogin()" on the
+// Login button. This is the most reliable way to trigger login in AI2 Companion
+// WebView, which does not always fire form submit events correctly.
+var _loginRunning = false;
+function doLogin() {
+  if (_loginRunning) return;
+  _loginRunning = true;
+  var p = handleLogin(null);
+  function done() { _loginRunning = false; }
+  if (p && typeof p.then === 'function') {
+    p.then(done, done);
+  } else {
+    done();
   }
 }
 
@@ -1735,43 +1751,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Login trigger.
-  // ONE reliable handler: the form's own submit event.
-  // - Works on desktop Chrome (Enter key + button click).
-  // - Works on Android WebView (button tap fires submit reliably).
-  // - e.preventDefault() blocks the native page reload.
-  // - A single _loginRunning flag prevents duplicate calls.
-  // The touchend+click IIFE is removed — it caused issues on MIT App Inventor
-  // WebViewer where touchend fired without {passive:false}, letting the form
-  // reload the page and kill the in-flight async handleLogin call.
-  var _loginRunning = false;
-
+  // Login via Enter key (desktop) — button tap handled by onclick="doLogin()" in HTML.
   $('loginForm').addEventListener('submit', function (e) {
     e.preventDefault();
-    if (_loginRunning) return;
-    _loginRunning = true;
-    var p = handleLogin(e);
-    function done() { _loginRunning = false; }
-    if (p && typeof p.then === 'function') {
-      p.then(done, done);
-    } else {
-      done();
-    }
-  });
-
-  // Belt-and-suspenders: also listen on the button click so tapping
-  // works even if the WebView does not bubble click→submit.
-  $('loginBtn').addEventListener('click', function (e) {
-    e.preventDefault();
-    if (_loginRunning) return;
-    _loginRunning = true;
-    var p = handleLogin(e);
-    function done() { _loginRunning = false; }
-    if (p && typeof p.then === 'function') {
-      p.then(done, done);
-    } else {
-      done();
-    }
+    doLogin();
   });
 
   // Product form
