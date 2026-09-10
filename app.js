@@ -2,8 +2,6 @@
 // PHONE ACCESSORIES INVENTORY SYSTEM - app.js
 // ============================================================
 
-'use strict';
-
 // ── State ────────────────────────────────────────────────────
 const STATE = {
   user: null,
