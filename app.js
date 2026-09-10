@@ -439,6 +439,8 @@ function togglePassword() {
   }
 }
 
+// handleLogin — kept as async for desktop compatibility.
+// doLogin() is the Android-safe entry point that wraps this.
 async function handleLogin(e) {
   if (e && e.preventDefault) e.preventDefault();
   const username = $('loginUsername').value.trim();
@@ -448,7 +450,6 @@ async function handleLogin(e) {
 
   errEl.style.display = 'none';
 
-  // ── Block immediately if already locked ──────────────────
   if (bruteIsLocked()) {
     bruteSetFormLocked(true, '');
     bruteStartCountdown();
@@ -465,46 +466,115 @@ async function handleLogin(e) {
 
   try {
     const res = await apiPost({ action: 'login', username, password });
+    if (res.success) {
+      bruteRecordSuccess();
+      saveSession(res.data);
+      STATE.user = res.data;
+      // Use setTimeout(0) so the call-stack fully unwinds before
+      // DOM manipulation — fixes silent failure in AI2 WebView where
+      // synchronous DOM changes inside an async/await continuation
+      // are sometimes swallowed.
+      setTimeout(function () { initApp(); }, 0);
+    } else {
+      const bf = bruteRecordFailure();
+      if (!bf.locked) {
+        errEl.textContent   = bf.message || res.message || 'Invalid username or password.';
+        errEl.style.display = 'block';
+      }
+    }
+  } catch (err) {
+    errEl.textContent   = (err && err.message) ? err.message : 'Unable to connect to server.';
+    errEl.style.display = 'block';
+  } finally {
+    if (!bruteIsLocked()) setButtonLoading(btn, false);
+  }
+}
+
+// doLogin() — called by onclick="doLogin()" on the Login button.
+// Using a plain XHR-based path for AI2 Companion WebView reliability.
+// _loginRunning prevents duplicate taps.
+var _loginRunning = false;
+function doLogin() {
+  if (_loginRunning) return;
+
+  var username = $('loginUsername').value.trim();
+  var password = $('loginPassword').value;
+  var errEl    = $('loginError');
+  var btn      = $('loginBtn');
+
+  errEl.style.display = 'none';
+
+  if (bruteIsLocked()) {
+    bruteSetFormLocked(true, '');
+    bruteStartCountdown();
+    return;
+  }
+
+  if (!username || !password) {
+    errEl.textContent = 'Please enter username and password.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  _loginRunning = true;
+  setButtonLoading(btn, true, 'Logging in...');
+
+  // Use plain XHR directly — most reliable in AI2 Companion WebView.
+  // No async/await, no Promise chain, no AbortController.
+  var xhr = new XMLHttpRequest();
+  var payload = 'payload=' + encodeURIComponent(JSON.stringify({
+    action: 'login',
+    username: username,
+    password: password
+  }));
+
+  xhr.open('POST', CONFIG.API_URL, true);
+  xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+  xhr.timeout = 30000;
+
+  xhr.onload = function () {
+    _loginRunning = false;
+    if (!bruteIsLocked()) setButtonLoading(btn, false);
+
+    var res;
+    try {
+      res = JSON.parse(xhr.responseText);
+    } catch (ex) {
+      errEl.textContent   = 'Invalid response from server. Please try again.';
+      errEl.style.display = 'block';
+      return;
+    }
 
     if (res.success) {
       bruteRecordSuccess();
       saveSession(res.data);
       STATE.user = res.data;
-      initApp();
+      // setTimeout(0) ensures DOM updates run after XHR callback unwinds.
+      setTimeout(function () { initApp(); }, 0);
     } else {
-      // Record failure and show appropriate message
-      const { locked, message } = bruteRecordFailure();
-      if (!locked) {
-        errEl.textContent   = message || res.message || 'Invalid username or password.';
+      var bf = bruteRecordFailure();
+      if (!bf.locked) {
+        errEl.textContent   = bf.message || res.message || 'Invalid username or password.';
         errEl.style.display = 'block';
       }
-      // If locked, bruteRecordFailure already updated the UI
     }
-  } catch (err) {
-    errEl.textContent   = err.message || 'Unable to connect to server. Please check your internet connection.';
-    errEl.style.display = 'block';
-  } finally {
-    // Only restore button if NOT locked
-    if (!bruteIsLocked()) {
-      setButtonLoading(btn, false);
-    }
-  }
-}
+  };
 
-// doLogin() — global function called directly by onclick="doLogin()" on the
-// Login button. This is the most reliable way to trigger login in AI2 Companion
-// WebView, which does not always fire form submit events correctly.
-var _loginRunning = false;
-function doLogin() {
-  if (_loginRunning) return;
-  _loginRunning = true;
-  var p = handleLogin(null);
-  function done() { _loginRunning = false; }
-  if (p && typeof p.then === 'function') {
-    p.then(done, done);
-  } else {
-    done();
-  }
+  xhr.onerror = function () {
+    _loginRunning = false;
+    if (!bruteIsLocked()) setButtonLoading(btn, false);
+    errEl.textContent   = 'Unable to connect to server. Please check your internet connection.';
+    errEl.style.display = 'block';
+  };
+
+  xhr.ontimeout = function () {
+    _loginRunning = false;
+    if (!bruteIsLocked()) setButtonLoading(btn, false);
+    errEl.textContent   = 'Request timed out. Please try again.';
+    errEl.style.display = 'block';
+  };
+
+  xhr.send(payload);
 }
 
 function logout() {
