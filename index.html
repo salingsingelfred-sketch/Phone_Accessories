@@ -1102,7 +1102,22 @@
   </div>
 
   <script src="config.js"></script>
+  <script>
+    // Safety net: runs before app.js.
+    // If app.js fails to load/parse, doLogin still exists and shows an error.
+    window._appJsLoaded = false;
+    window.doLogin = function() {
+      if (!window._appJsLoaded) {
+        document.getElementById('loginError').textContent = 'App failed to load. Please refresh.';
+        document.getElementById('loginError').style.display = 'block';
+      }
+    };
+  </script>
   <script src="app.js"></script>
+  <script>
+    // Confirm app.js loaded successfully.
+    window._appJsLoaded = true;
+  </script>
 </body>
 </html>
 
