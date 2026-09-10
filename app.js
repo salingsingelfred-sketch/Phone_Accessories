@@ -594,7 +594,7 @@ function logout() {
 // On Android WebView, bootSession() can be called multiple times
 // (retry loop, visibilitychange, pageshow) — without this guard,
 // nav-link listeners stack up and break touch navigation.
-let _appInitialized = false;
+var _appInitialized = false;
 
 function initApp() {
   const user = STATE.user;
